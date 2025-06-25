@@ -19,8 +19,6 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
-
-// Connect MongoDB
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -29,8 +27,6 @@ mongoose.connect(MONGO_URI, {
     console.error('❌ MongoDB connection error:', err);
     process.exit(1);
   });
-
-// JWT Auth Middleware
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'No token provided' });
@@ -44,8 +40,6 @@ const authenticate = (req, res, next) => {
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
-
-// Signup
 app.post('/signup', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -65,8 +59,6 @@ app.post('/signup', async (req, res) => {
     res.status(500).json({ error: 'Server error during signup' });
   }
 });
-
-// Login
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -85,8 +77,6 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Server error during login' });
   }
 });
-
-// Get all users
 app.get('/users', authenticate, async (req, res) => {
   try {
     const users = await User.find().select('-password');
@@ -96,8 +86,6 @@ app.get('/users', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Server error fetching users' });
   }
 });
-
-// Update user by ID
 app.put('/users/:id', authenticate, async (req, res) => {
   try {
     const { name, email } = req.body;
@@ -110,8 +98,6 @@ app.put('/users/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Server error updating user' });
   }
 });
-
-// Delete user by ID
 app.delete('/users/:id', authenticate, async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
@@ -122,8 +108,6 @@ app.delete('/users/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Server error deleting user' });
   }
 });
-
-// Contact
 app.post('/api/contact', async (req, res) => {
   const { name, birthDate, email, question } = req.body;
   if (!name || !birthDate || !email || !question) {
@@ -159,11 +143,7 @@ app.post('/api/contact', async (req, res) => {
     res.status(500).json({ error: 'Failed to send email.' });
   }
 });
-
-// Prediction Endpoint
 app.use('/api', predictRoute);
-
-// Fallback Prediction
 app.post('/api/predict-fallback', async (req, res) => {
   const { question } = req.body;
   if (!question) return res.status(400).json({ error: 'Question is required' });
@@ -196,8 +176,9 @@ app.post('/api/predict-fallback', async (req, res) => {
     res.status(500).json({ error: 'Failed to get prediction from AI' });
   }
 });
-
-// Start Server
+app.get("/", (req, res) => {
+  res.send("✅ Predict Backend is working!");
+});
 app.listen(port, () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
 });
