@@ -10,15 +10,22 @@ import User from './models/User.js';
 import predictRoute from './routes/predictRoute.js';
 
 dotenv.config();
-
 const app = express();
 const port = process.env.PORT || 3000;
+
+// MongoDB URI
 const MONGO_URI = process.env.MONGO_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-app.use(cors({ origin: 'http://localhost:5173' }));
+// Middleware
+app.use(cors({
+  origin: ['http://localhost:5173', 'https://predict-frontend-xgy7-659jc0phc.vercel.app'], // both local and deployed
+  credentials: true
+}));
 app.use(express.json());
+
+// DB Connection
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -27,6 +34,8 @@ mongoose.connect(MONGO_URI, {
     console.error('❌ MongoDB connection error:', err);
     process.exit(1);
   });
+
+// Auth Middleware
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'No token provided' });
@@ -40,6 +49,11 @@ const authenticate = (req, res, next) => {
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
+
+// Routes
+app.use('/api', predictRoute);
+
+// Signup Route
 app.post('/signup', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -55,10 +69,11 @@ app.post('/signup', async (req, res) => {
     const token = jwt.sign({ userId: newUser._id }, JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ message: 'User signed up successfully', token });
   } catch (err) {
-    console.error('Signup error:', err);
     res.status(500).json({ error: 'Server error during signup' });
   }
 });
+
+// Login Route
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -71,43 +86,29 @@ app.post('/login', async (req, res) => {
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1h' });
-    res.json({ message: 'Login successful', token });
+    res.json({ message: 'Login successful', token, user });
   } catch (err) {
-    console.error('Login error:', err);
     res.status(500).json({ error: 'Server error during login' });
   }
 });
+
+// Protected User Routes
 app.get('/users', authenticate, async (req, res) => {
-  try {
-    const users = await User.find().select('-password');
-    res.json(users);
-  } catch (err) {
-    console.error('Get users error:', err);
-    res.status(500).json({ error: 'Server error fetching users' });
-  }
+  const users = await User.find().select('-password');
+  res.json(users);
 });
 app.put('/users/:id', authenticate, async (req, res) => {
-  try {
-    const { name, email } = req.body;
-    const update = { name, email };
-    const user = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password');
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ message: 'User updated successfully', user });
-  } catch (err) {
-    console.error('Update error:', err);
-    res.status(500).json({ error: 'Server error updating user' });
-  }
+  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true }).select('-password');
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ message: 'User updated', user });
 });
 app.delete('/users/:id', authenticate, async (req, res) => {
-  try {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ message: 'User deleted successfully' });
-  } catch (err) {
-    console.error('Delete error:', err);
-    res.status(500).json({ error: 'Server error deleting user' });
-  }
+  const user = await User.findByIdAndDelete(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ message: 'User deleted' });
 });
+
+// Contact Form Route
 app.post('/api/contact', async (req, res) => {
   const { name, birthDate, email, question } = req.body;
   if (!name || !birthDate || !email || !question) {
@@ -123,27 +124,25 @@ app.post('/api/contact', async (req, res) => {
       },
     });
 
-    const mailOptions = {
+    await transporter.sendMail({
       from: `"MysticAI" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
       subject: '🔮 New Contact Form Submission',
       html: `
-        <h2>You've received a new contact form submission</h2>
         <p><strong>Name:</strong> ${name}</p>
         <p><strong>Birth Date:</strong> ${birthDate}</p>
         <p><strong>Email:</strong> ${email}</p>
         <p><strong>Question:</strong> ${question}</p>
       `,
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
     res.status(200).json({ success: true, message: 'Email sent successfully!' });
   } catch (err) {
-    console.error('Email error:', err.message);
     res.status(500).json({ error: 'Failed to send email.' });
   }
 });
-app.use('/api', predictRoute);
+
+// Fallback Prediction API
 app.post('/api/predict-fallback', async (req, res) => {
   const { question } = req.body;
   if (!question) return res.status(400).json({ error: 'Question is required' });
@@ -163,22 +162,19 @@ app.post('/api/predict-fallback', async (req, res) => {
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter error: ${response.status} - ${errorText}`);
-    }
-
     const data = await response.json();
     const prediction = data.choices?.[0]?.message?.content || '🔮 The spirits are silent...';
     res.json({ prediction });
   } catch (err) {
-    console.error('Prediction error:', err.message);
     res.status(500).json({ error: 'Failed to get prediction from AI' });
   }
 });
-app.get("/", (req, res) => {
-  res.send("✅ Predict Backend is working!");
+
+// Health check
+app.get('/', (req, res) => {
+  res.send('✅ Predict Backend is working!');
 });
+
 app.listen(port, () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
 });
